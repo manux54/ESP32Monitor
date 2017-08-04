@@ -1,0 +1,24 @@
+menu "MCP9808 Configuration"
+
+config I2C_SCL_IO
+    int "I2C SCL GPIO number"
+	range 0 34
+	default 21
+	help
+		GPIO number (IOxx) of the SCL pin for the master i2c bus.
+
+config I2C_SDA_IO
+    int "I2C SDA GPIO number"
+	range 0 34
+	default 19
+	help
+		GPIO number (IOxx) of the SDA pin for the master i2c bus.
+
+config MCP9808_SENSOR_ADDR
+    int "MCP9808 Sensor Address"
+	range 24 31
+	default 24
+	help
+		The MCP9808 sensor address on the i2c bus. Defaults to 0x18 (24 dec).
+
+endmenu

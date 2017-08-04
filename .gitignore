@@ -1,0 +1,7 @@
+# Ignore sdkconfig and sdkconfig.old which are generated from make menuconfig
+# They contains system specific information (e.g. esp32 port number)
+# and private keys (e.g. Azure IoT Hub device connection string and router information)
+sdkconfig*
+
+#ignore binary file generated from build
+build
