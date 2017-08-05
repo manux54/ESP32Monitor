@@ -11,7 +11,25 @@ __Windows User Note:__ At the time of writing there is a bug in the toolchain un
 
 It would be wise to run one of the sample to validate your setup.
 
-## Step 2: Project setup
+## Step 2: Install Azure IoT C SDK
+
+
+Create an `azure-iot` directory in the ESP32 SDK's `components` directory:<br/>
+`mkdir $IDF_PATH/components/azure-iot`
+
+Clone the Azure IoT C SDK into the `azure-iot` directory as `sdk`:<br/>
+`cd $IDF_PATH/components/azure-iot`<br/>
+`git clone --recursive  https://github.com/Azure/azure-iot-sdk-c.git sdk`
+
+__Note:__ At the time of writing, there is a bug in the SDK that prevent you from compiling the SDK and you might need to rollback to the previous release. You can try to skip this step first to see if it has been fixed.<br/>
+`cd sdk`<br/>
+`git reset --hard 34ba88699a76cbe1d88b2f75e67a3d91cb0f51e8`<br/>
+`cd ..`<br/>
+
+Copy the `component.mk` file for ESP32 into the `azure-iot` directory:<br/>
+`cp sdk/c-utility/build_all/esp32/sdk/component.mk .`
+
+## Step 3: Project setup
 
 __Windows User Note:__ Paths and commands are relative to Msys2 environment built in step 1
 
@@ -20,7 +38,7 @@ Clone this project into ~/esp/projects
 Setup build configuration:<br/>
 `make menuconfig`
 
-Set the appropriate values in __Serial Flasher Config > Default Serial Port__ and __MCP 9808 Configuration__
+Set the appropriate values in __Serial Flasher Config > Default Serial Port__, __MCP 9808 Configuration__ and __Azure Configuration__
 
 Build the application and flash the device<br/>
 `make flash`
