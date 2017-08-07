@@ -8,7 +8,10 @@
 #include "esp_event_loop.h" 
 #include "esp_log.h"
 
+#include "nvs_flash.h"
+
 #include "mcp9808.h"
+#include "iot-hub.h"
 
 #define I2C_SCL_IO                   CONFIG_I2C_SCL_IO
 #define I2C_SDA_IO                   CONFIG_I2C_SDA_IO
@@ -28,13 +31,14 @@ static const char *TAG = "main-hub";
 /* FreeRTOS event group to signal when we are connected & ready to make a request */
 static EventGroupHandle_t wifi_event_group;
 
-/* The event group allows multiple bits for each event, but we only care about one event
- - are we connected to the AP with an IP? */
 const int CONNECTED_BIT = BIT0;
+const int AZURE_EVENT_BIT = BIT1;
 
 void process_sensor_data(float temperature)
 {
     printf("Temperature = %.4f C\n", temperature);
+    iothub_processCensorData(temperature);
+    xEventGroupSetBits(wifi_event_group, AZURE_EVENT_BIT);
 }
 
 void task_censor_monitor(void * ptr)
@@ -78,6 +82,11 @@ void task_process_monitor_queue(void * ptr)
 
     ESP_LOGI(TAG, "Connected to access point success");
 
+    if (iothub_init(HUB_AZURE_HOST_NAME, HUB_AZURE_DEVICE_ID, HUB_AZURE_DEVICE_PRIMARY_KEY) == ESP_OK)
+    {
+        ESP_LOGI(TAG, "IoT Hub Initialized");
+    }
+
     float temperature;
 
     while(true)
@@ -115,6 +124,23 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     }
 
     return ESP_OK;
+}
+
+void task_process_iot_message_queue(void * ptr)
+{
+    ESP_LOGI(TAG, "Waiting for WiFi access point ...");
+    xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+    ESP_LOGI(TAG, "Connected to access point success");
+
+    while(true)
+    {
+        ESP_LOGI(TAG, "Waiting for azure messages ...");
+
+        // Process events off the queue, at least once a minute.
+        xEventGroupWaitBits(wifi_event_group, AZURE_EVENT_BIT, true, true, 60000 / portTICK_PERIOD_MS);
+        iothub_processEventQueue();
+    }
+    
 }
 
 esp_err_t initialize_wifi()
@@ -187,8 +213,11 @@ esp_err_t initialize_wifi()
 void app_main()
 {
     QueueHandle_t queue = xQueueCreate(1, sizeof(float));
+    
+    nvs_flash_init();
     initialize_wifi();
 
     xTaskCreate(task_censor_monitor, "Temperature Sensor Monitor", 2048, (void *) queue, 5, NULL);
-    xTaskCreate(task_process_monitor_queue, "Temperature Sensor Monitor", 2048, (void *) queue, 5, NULL);
+    xTaskCreate(task_process_monitor_queue, "Temperature Sensor Monitor", 8192, (void *) queue, 5, NULL);
+    xTaskCreate(task_process_iot_message_queue, "IoT message dispatcher", 8192, NULL, 5, NULL);
 }
