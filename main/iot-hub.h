@@ -40,6 +40,22 @@ esp_err_t iothub_processCensorData(const float temperature);
  */
 esp_err_t iothub_processEventQueue();
 
+/**
+ * @brief Return the current device twin desired properties for telemetry refresh rate
+ *
+ * @return
+ *         - The duration in ms between refreshes.
+ */
+unsigned int iothub_refreshRate();
+
+/**
+ * @ brief Report twin data to the hub
+ * @return
+ *         - ESP_OK if twin data has been sent to the azure hub
+ *         - ESP_FAIL otherwise
+ */
+esp_err_t iothub_reportTwinData(int refreshRate);
+
 #ifdef __cplusplus
 }
 #endif

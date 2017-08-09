@@ -4,6 +4,8 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
+#include "driver/gpio.h"
+
 #include "esp_wifi.h"
 #include "esp_event_loop.h" 
 #include "esp_log.h"
@@ -23,8 +25,6 @@
 #define HUB_AZURE_DEVICE_ID           CONFIG_AZURE_DEVICE_ID
 #define HUB_AZURE_DEVICE_PRIMARY_KEY  CONFIG_AZURE_DEVICE_PRIMARY_KEY
 
-#define SENSOR_RATE 5000
-
 /* Logging Tag */
 static const char *TAG = "main-hub";
 
@@ -32,13 +32,14 @@ static const char *TAG = "main-hub";
 static EventGroupHandle_t wifi_event_group;
 
 const int CONNECTED_BIT = BIT0;
-const int AZURE_EVENT_BIT = BIT1;
+const int AZURE_INIT_BIT = BIT1;
+
+unsigned int _refreshRate = 0;
 
 void process_sensor_data(float temperature)
 {
     printf("Temperature = %.4f C\n", temperature);
     iothub_processCensorData(temperature);
-    xEventGroupSetBits(wifi_event_group, AZURE_EVENT_BIT);
 }
 
 void task_censor_monitor(void * ptr)
@@ -52,6 +53,8 @@ void task_censor_monitor(void * ptr)
         puts("Failed to initialize MCP9808 sensor\n");
         while(true) { vTaskDelay(1000); }
     }
+
+    xEventGroupWaitBits(wifi_event_group, AZURE_INIT_BIT, false, true, portMAX_DELAY);
 
     float temperature;
 
@@ -68,7 +71,13 @@ void task_censor_monitor(void * ptr)
             puts("Failed to send temperature to queue within 500ms\n");
         }
 
-        vTaskDelay(SENSOR_RATE/portTICK_PERIOD_MS);
+        if (_refreshRate != iothub_refreshRate())
+        {
+            _refreshRate = iothub_refreshRate();
+            iothub_reportTwinData(_refreshRate);
+        }
+
+        vTaskDelay(_refreshRate/portTICK_PERIOD_MS);
     }
 }
 
@@ -87,11 +96,13 @@ void task_process_monitor_queue(void * ptr)
         ESP_LOGI(TAG, "IoT Hub Initialized");
     }
 
+    xEventGroupSetBits(wifi_event_group, AZURE_INIT_BIT);
+
     float temperature;
 
     while(true)
     {
-        if (!xQueueReceive(queue, &temperature, SENSOR_RATE))
+        if (!xQueueReceive(queue, &temperature, _refreshRate))
         {
             puts("Failed to receive sensor data");
         }
@@ -130,15 +141,13 @@ void task_process_iot_message_queue(void * ptr)
 {
     ESP_LOGI(TAG, "Waiting for WiFi access point ...");
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
-    ESP_LOGI(TAG, "Connected to access point success");
+    ESP_LOGI(TAG, "Waiting for azure messages ...");
 
     while(true)
     {
-        ESP_LOGI(TAG, "Waiting for azure messages ...");
-
-        // Process events off the queue, at least once a minute.
-        xEventGroupWaitBits(wifi_event_group, AZURE_EVENT_BIT, true, true, 60000 / portTICK_PERIOD_MS);
+        // Process events off the queue, at least twice a second.
         iothub_processEventQueue();
+        vTaskDelay(500 / portTICK_PERIOD_MS);
     }
     
 }
@@ -216,6 +225,9 @@ void app_main()
     
     nvs_flash_init();
     initialize_wifi();
+
+    gpio_pad_select_gpio(2);
+    gpio_set_direction(2, GPIO_MODE_OUTPUT);
 
     xTaskCreate(task_censor_monitor, "Temperature Sensor Monitor", 2048, (void *) queue, 5, NULL);
     xTaskCreate(task_process_monitor_queue, "Temperature Sensor Monitor", 8192, (void *) queue, 5, NULL);
