@@ -38,7 +38,23 @@ typedef struct EVENT_INSTANCE_TAG
 static const char *TAG = "iot-hub";
 static hub_configuration_t _config;
 
+static bool _connected = false;
+
 IOTHUB_CLIENT_LL_HANDLE _iotHubClientHandle = NULL;
+
+void ConnectionStatusCallback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_CLIENT_CONNECTION_STATUS_REASON reason, void * ptr)
+{
+    if (result == IOTHUB_CLIENT_CONNECTION_AUTHENTICATED) {
+        ESP_LOGI(TAG, "Connected to IoT Hub\n");
+        xEventGroupSetBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
+        _connected = true;
+    }
+    else {
+        ESP_LOGI(TAG, "Disconnected from IoT Hub\n");
+        xEventGroupClearBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
+        _connected = false;
+    }
+}
 
 void ReportedStateCallback(int status_code, void * userContextCallback)
 {
@@ -67,7 +83,6 @@ void DeviceTwinUpdateStateCallback(DEVICE_TWIN_UPDATE_STATE update_state, const 
     if (update_state == DEVICE_TWIN_UPDATE_COMPLETE)
     {
         ESP_LOGI(TAG, "Complete Update request received\n");
-        xEventGroupSetBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
     }
     else
     {
@@ -273,6 +288,10 @@ esp_err_t iothub_connect()
     bool traceOn = true;
     IoTHubClient_LL_SetOption(_iotHubClientHandle, "logtrace", &traceOn);
 
+    if (IoTHubClient_LL_SetConnectionStatusCallback(_iotHubClientHandle, ConnectionStatusCallback, NULL) != IOTHUB_CLIENT_OK)  {
+        ESP_LOGE(TAG, "Error registering Connection Status Callback function\n");
+    }
+
     /* Setting Message call back, so we can receive Commands. */
     if (IoTHubClient_LL_SetMessageCallback(_iotHubClientHandle, ReceiveMessageCallback, &receiveContext) != IOTHUB_CLIENT_OK)
     {
@@ -290,6 +309,14 @@ esp_err_t iothub_connect()
     {
         ESP_LOGE(TAG, "Failed to Register Toggle Light Device Method");
     }
+
+    IOTHUB_CLIENT_RETRY_POLICY retryPolicy;
+    size_t timeout;
+
+    IoTHubClient_LL_GetRetryPolicy(_iotHubClientHandle, &retryPolicy, &timeout);
+
+    ESP_LOGI(TAG, "Retry policy = %d for timeout = %d\n", 
+        retryPolicy, timeout);
     
     return ESP_OK;
 }
@@ -338,7 +365,7 @@ void task_process_iot_message_queue(void * ptr)
         {
             IoTHubClient_LL_DoWork(_iotHubClientHandle);
         }
-        while ((IoTHubClient_LL_GetSendStatus(_iotHubClientHandle, &status) == IOTHUB_CLIENT_OK) && (status == IOTHUB_CLIENT_SEND_STATUS_BUSY));
+        while (_connected && (IoTHubClient_LL_GetSendStatus(_iotHubClientHandle, &status) == IOTHUB_CLIENT_OK) && (status == IOTHUB_CLIENT_SEND_STATUS_BUSY));
 
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
