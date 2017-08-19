@@ -19,27 +19,22 @@
 #include "device-config.h"
 #include "iot-hub.h"
 
-#define DEFAULT_REFRESH_RATE 30000
-
-typedef struct {
+typedef struct 
+{
     const char * hostname;
     const char * device_id;
     const char * primary_key;
     QueueHandle_t telemetry_queue;
 } hub_configuration_t;
 
-typedef struct EVENT_INSTANCE_TAG
+typedef struct
 {
     IOTHUB_MESSAGE_HANDLE messageHandle;
     size_t messageTrackingId;  // For tracking the messages within the user callback.
 } EVENT_INSTANCE;
 
-/* Logging Tag */
 static const char *TAG = "iot-hub";
 static hub_configuration_t _config;
-
-static bool _connected = false;
-
 IOTHUB_CLIENT_LL_HANDLE _iotHubClientHandle = NULL;
 
 void ConnectionStatusCallback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_CLIENT_CONNECTION_STATUS_REASON reason, void * ptr)
@@ -47,12 +42,15 @@ void ConnectionStatusCallback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_CLI
     if (result == IOTHUB_CLIENT_CONNECTION_AUTHENTICATED) {
         ESP_LOGI(TAG, "Connected to IoT Hub\n");
         xEventGroupSetBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
-        _connected = true;
+    }
+    else if (reason == IOTHUB_CLIENT_CONNECTION_EXPIRED_SAS_TOKEN) {
+        ESP_LOGE(TAG, "Disconnected from IoT Hub: Expired shared access token");
+        xEventGroupClearBits(_wifi_event_group, IOTHUB_INITIALIZED_BIT);
+        xEventGroupClearBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
     }
     else {
-        ESP_LOGI(TAG, "Disconnected from IoT Hub\n");
+        ESP_LOGE(TAG, "Disconnected from IoT Hub with reason=%d\n", reason);
         xEventGroupClearBits(_wifi_event_group, IOTHUB_CONNECTED_BIT);
-        _connected = false;
     }
 }
 
@@ -222,9 +220,9 @@ void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void* us
 
 esp_err_t dispatch_telemetry_data(float temperature)
 {
-    EVENT_INSTANCE message;
+    static EVENT_INSTANCE message;
     static int messageCounter;
-
+    
     char telemetry_data[100];
     sprintf(telemetry_data, "{\"deviceId\":\"%s\",\"temperature\":%.4f}", _config.device_id, temperature);
 
@@ -260,115 +258,117 @@ esp_err_t dispatch_telemetry_data(float temperature)
 
 esp_err_t iothub_connect()
 {
-    int receiveContext = 0;
+    ESP_LOGI(TAG, "Connecting to Hub");
+    static int receiveContext;
     
-    if (platform_init() != 0)
-    {
-        ESP_LOGE(TAG, "Failed to initialize the platform\n");
-        return ESP_FAIL;
-    }
-
     char connectionString[256];
-
+    
     if (sprintf_s(connectionString, sizeof(connectionString), "HostName=%s;DeviceId=%s;SharedAccessKey=%s",
         _config.hostname, _config.device_id, _config.primary_key) <= 0) 
     {
         ESP_LOGE(TAG, "Failed to create the connection string\n");
         return ESP_FAIL;
     }
-    
+        
+    if (platform_init() != 0)
+    {
+        ESP_LOGE(TAG, "Failed to initialize the platform\n");
+        return ESP_FAIL;
+    }
+
     _iotHubClientHandle = IoTHubClient_LL_CreateFromConnectionString(connectionString, MQTT_Protocol);    
 
     if (_iotHubClientHandle == NULL)
     {
         ESP_LOGE(TAG, "Failed to create the IoT Hub connection\n");
+        platform_deinit();
         return ESP_FAIL;
     }
 
     bool traceOn = true;
     IoTHubClient_LL_SetOption(_iotHubClientHandle, "logtrace", &traceOn);
 
-    if (IoTHubClient_LL_SetConnectionStatusCallback(_iotHubClientHandle, ConnectionStatusCallback, NULL) != IOTHUB_CLIENT_OK)  {
-        ESP_LOGE(TAG, "Error registering Connection Status Callback function\n");
+    if (IoTHubClient_LL_SetConnectionStatusCallback(_iotHubClientHandle, ConnectionStatusCallback, NULL) != IOTHUB_CLIENT_OK)
+    {
+        ESP_LOGE(TAG, "Failed to register connection status callback function\n");
     }
 
     /* Setting Message call back, so we can receive Commands. */
     if (IoTHubClient_LL_SetMessageCallback(_iotHubClientHandle, ReceiveMessageCallback, &receiveContext) != IOTHUB_CLIENT_OK)
     {
-        (void)printf("ERROR: IoTHubClient_LL_SetMessageCallback..........FAILED!\r\n");
+        ESP_LOGE(TAG, "Failed to register message callback function\n");
     }
 
     /* Register Device Method */
     if (IoTHubClient_LL_SetDeviceMethodCallback(_iotHubClientHandle, DeviceMethodCallback, NULL) != IOTHUB_CLIENT_OK)
     {
-        ESP_LOGE(TAG, "Failed to Register Toggle Light Device Method");
+        ESP_LOGE(TAG, "Failed to register device method callback function");
     }
 
     /* Register Device Twin Callback method */
     if (IoTHubClient_LL_SetDeviceTwinCallback(_iotHubClientHandle, DeviceTwinUpdateStateCallback, NULL) != IOTHUB_CLIENT_OK)
     {
-        ESP_LOGE(TAG, "Failed to Register Toggle Light Device Method");
+        ESP_LOGE(TAG, "Failed to register device twin callback function");
     }
 
-    IOTHUB_CLIENT_RETRY_POLICY retryPolicy;
-    size_t timeout;
-
-    IoTHubClient_LL_GetRetryPolicy(_iotHubClientHandle, &retryPolicy, &timeout);
-
-    ESP_LOGI(TAG, "Retry policy = %d for timeout = %d\n", 
-        retryPolicy, timeout);
-    
     return ESP_OK;
+}
+
+void iothub_disconnect()
+{
+    if (_iotHubClientHandle != NULL)
+    {
+        IoTHubClient_LL_Destroy(_iotHubClientHandle);
+        (void)printf("Handle Destroyed\r\n");
+        
+        _iotHubClientHandle = NULL;
+        
+        platform_deinit();
+        (void)printf("Platform de-initiazed\r\n");
+    }
+    
 }
 
 void task_process_sensor_telemetry(void * ptr)
 {
-    ESP_LOGI(TAG, "Waiting for WiFi access point ...");
-    xEventGroupWaitBits(_wifi_event_group, WIFI_CONNECTED_BIT, false, true, portMAX_DELAY);
-    ESP_LOGI(TAG, "Connected to access point success");
-
-    if (iothub_connect() == ESP_OK)
-    {
-        ESP_LOGI(TAG, "IoT Hub Initialized");
-    }
-
-    xEventGroupSetBits(_wifi_event_group, IOTHUB_INITIALIZED_BIT);
-
     float temperature;
-
-    while(true)
-    {
-        // TODO: Get generic message telemetry from queue
-        if (!xQueueReceive(_config.telemetry_queue, &temperature, _device_configuration.sensor_sampling_rate))
-        {
-            puts("Failed to receive sensor data");
-        }
-        else
-        {
-            dispatch_telemetry_data(temperature);
-        }
-    }    
-}
-
-void task_process_iot_message_queue(void * ptr)
-{
     IOTHUB_CLIENT_STATUS status;
 
-    ESP_LOGI(TAG, "Azure Hub Connection ...");
-    xEventGroupWaitBits(_wifi_event_group, IOTHUB_INITIALIZED_BIT, false, true, portMAX_DELAY);
-    ESP_LOGI(TAG, "Waiting for Azure messages ...");
-
     while(true)
     {
-        // Process events off the queue, at least twice a second.
-        do    
+        xEventGroupWaitBits(_wifi_event_group, WIFI_CONNECTED_BIT, false, true, portMAX_DELAY);
+        
+        // Reconnect to hub everytime we are disonnected
+        if ((xEventGroupGetBits(_wifi_event_group) & IOTHUB_INITIALIZED_BIT) == 0) 
         {
-            IoTHubClient_LL_DoWork(_iotHubClientHandle);
+            if (iothub_connect() == ESP_OK)
+            {
+                ESP_LOGI(TAG, "IoT Hub Initialized");
+                xEventGroupSetBits(_wifi_event_group, IOTHUB_INITIALIZED_BIT);
+            }
+        } 
+        // Process data from the telemetry queue
+        else if (xQueueReceive(_config.telemetry_queue, &temperature, _device_configuration.hub_pooling_rate / portTICK_PERIOD_MS)) 
+        {
+            dispatch_telemetry_data(temperature);
+        } 
+        else 
+        {
+            // Process events from the hub queue
+            do    
+            {
+                IoTHubClient_LL_DoWork(_iotHubClientHandle);
+            }
+            while ((IoTHubClient_LL_GetSendStatus(_iotHubClientHandle, &status) == IOTHUB_CLIENT_OK) && (status == IOTHUB_CLIENT_SEND_STATUS_BUSY));
         }
-        while (_connected && (IoTHubClient_LL_GetSendStatus(_iotHubClientHandle, &status) == IOTHUB_CLIENT_OK) && (status == IOTHUB_CLIENT_SEND_STATUS_BUSY));
 
-        vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
+        if ((xEventGroupGetBits(_wifi_event_group) & IOTHUB_INITIALIZED_BIT) == 0)
+        {
+            ESP_LOGI(TAG, "Disconected from hub");
+            iothub_disconnect();
+            vTaskDelay(_device_configuration.hub_pooling_rate / portTICK_PERIOD_MS);
+        }
+    }    
 }
 
 esp_err_t iothub_init(const char * hostname, const char * device_id, const char * primary_key, const QueueHandle_t telemetry_queue)
@@ -379,7 +379,6 @@ esp_err_t iothub_init(const char * hostname, const char * device_id, const char 
     _config.telemetry_queue = telemetry_queue;
 
     xTaskCreate(task_process_sensor_telemetry, "IoT Hub Thread", 8192, (void *) telemetry_queue, 5, NULL);
-    xTaskCreate(task_process_iot_message_queue, "IoT message queue polling thread", 8192, NULL, 5, NULL);
 
     return ESP_OK;
 }

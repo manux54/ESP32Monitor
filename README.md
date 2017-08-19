@@ -7,7 +7,7 @@ This application has been tested using the following hardware:
 ## Step 1: ESP32 Toolchain Setup
 Follow the instruction from [here](http://esp-idf.readthedocs.io/en/latest/#setup-toolchain) to setup your toolchain environment.
 
-__Windows User Note:__ At the time of writing there is a bug in the toolchain under Windows 10. In order to build this project, or any of the samples, you need to edit *$IDF_PATH/make/project.mk* and change "gcc-ar" for "ar". [Info here](https://www.esp32.com/viewtopic.php?t=2500)
+__Windows User Note:__ At the time of writing there is a bug in the toolchain under Windows. In order to build this project, or any of the samples, you need to copy __liblto_plugin.dll.a__ and __liblto_plugin-0.dll__ into the tool chain. Refer to the [link](https://github.com/espressif/esp-idf/issues/828) for more information.
 
 It would be wise to run one of the sample to validate your setup.
 
@@ -21,10 +21,7 @@ Clone the Azure IoT C SDK into the `azure-iot` directory as `sdk`:<br/>
 `cd $IDF_PATH/components/azure-iot`<br/>
 `git clone --recursive  https://github.com/Azure/azure-iot-sdk-c.git sdk`
 
-__Note:__ At the time of writing, there is a bug in the SDK that prevent you from compiling the SDK and you might need to rollback to the previous release. You can try to skip this step first to see if it has been fixed.<br/>
-`cd sdk`<br/>
-`git reset --hard 34ba88699a76cbe1d88b2f75e67a3d91cb0f51e8`<br/>
-`cd ..`<br/>
+__Note:__ At the time of writing, there is also a bug in the SDK's component makefile that prevent you from compiling the SDK. Open the file `sdk/c-utility/build_all/esp32/sdk/component.mk` into your favorite editor and make sure that `sdk/iothub_client/src/iothub_client_retry_control.o` is in the __COMPONENT_OBJS__ section. Refer to the [link](https://github.com/Azure/azure-c-shared-utility/issues/94) for more information.<br/>
 
 Copy the `component.mk` file for ESP32 into the `azure-iot` directory:<br/>
 `cp sdk/c-utility/build_all/esp32/sdk/component.mk .`
