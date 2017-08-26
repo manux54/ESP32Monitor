@@ -18,6 +18,7 @@
 
 #include "device-config.h"
 #include "iot-hub.h"
+#include "telemetry-data.h"
 
 typedef struct 
 {
@@ -218,16 +219,15 @@ void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void* us
     IoTHubMessage_Destroy(eventInstance->messageHandle);
 }
 
-esp_err_t dispatch_telemetry_data(float temperature)
+esp_err_t dispatch_telemetry_data(telemetry_message_handle_t telemetry_message)
 {
     static EVENT_INSTANCE message;
     static int messageCounter;
-    
-    char telemetry_data[100];
-    sprintf(telemetry_data, "{\"deviceId\":\"%s\",\"temperature\":%.4f}", _config.device_id, temperature);
+
+    char * json = telemetry_message_to_json(telemetry_message);
 
     message.messageTrackingId = ++messageCounter;
-    message.messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)telemetry_data, strlen(telemetry_data));
+    message.messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)json, strlen(json));
 
     if (message.messageHandle == NULL)
     {
@@ -238,11 +238,17 @@ esp_err_t dispatch_telemetry_data(float temperature)
     IoTHubMessage_SetMessageId(message.messageHandle, "MSG_ID");
     IoTHubMessage_SetCorrelationId(message.messageHandle, "CORE_ID");
 
+    /*
     MAP_HANDLE propMap = IoTHubMessage_Properties(message.messageHandle);
     if (Map_AddOrUpdate(propMap, "temperatureAlert", temperature > 28 ? "true" : "false") != MAP_OK)
     {
         ESP_LOGE(TAG, "Failed to create temperature alert property");
     }
+*/
+    ESP_LOGI(TAG, "Sending Message: %s", json);
+
+    telemetry_message_dispose_json(json);
+    telemetry_message_destroy(telemetry_message);
 
     if (IoTHubClient_LL_SendEventAsync(_iotHubClientHandle, message.messageHandle, SendConfirmationCallback, &message) != IOTHUB_CLIENT_OK)
     {
@@ -251,7 +257,6 @@ esp_err_t dispatch_telemetry_data(float temperature)
     }
 
     ESP_LOGI(TAG, "IoTHubClient_LL_SendEventAsync accepted message [%d] for transmission to IoT Hub.\n", messageCounter);
-    ESP_LOGI(TAG, "Message: %s", telemetry_data);
 
     return ESP_OK;
 }
@@ -331,7 +336,7 @@ void iothub_disconnect()
 
 void task_process_sensor_telemetry(void * ptr)
 {
-    float temperature;
+    telemetry_message_handle_t message;
     IOTHUB_CLIENT_STATUS status;
 
     while(true)
@@ -348,9 +353,9 @@ void task_process_sensor_telemetry(void * ptr)
             }
         } 
         // Process data from the telemetry queue
-        else if (xQueueReceive(_config.telemetry_queue, &temperature, _device_configuration.hub_pooling_rate / portTICK_PERIOD_MS)) 
+        else if (xQueueReceive(_config.telemetry_queue, &message, _device_configuration.hub_pooling_rate / portTICK_PERIOD_MS)) 
         {
-            dispatch_telemetry_data(temperature);
+            dispatch_telemetry_data(message);
         } 
         else 
         {

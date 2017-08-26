@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "task.h": "c"
+        "task.h": "c",
+        "telemetry-data.h": "c"
     }
 }

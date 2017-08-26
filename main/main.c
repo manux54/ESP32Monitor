@@ -14,6 +14,7 @@
 #include "device-config.h"
 #include "mcp9808.h"
 #include "iot-hub.h"
+#include "telemetry-data.h"
 
 /* Logging Tag */
 static const char *TAG = "main-hub";
@@ -137,7 +138,7 @@ void app_main()
     _device_configuration.hub_pooling_rate = 500;
 
     // Initialize the telemetry queue
-    QueueHandle_t telemetry_queue = xQueueCreate(1, sizeof(float));
+    QueueHandle_t telemetry_queue = xQueueCreate(1, sizeof(telemetry_message_handle_t));
     
     // Initialize WiFi
     nvs_flash_init();

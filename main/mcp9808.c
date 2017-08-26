@@ -2,6 +2,7 @@
 
 #include "device-config.h"
 #include "mcp9808.h"
+#include "telemetry-data.h"
 
 #define ACK_CHECK_EN   0x1     /*!< I2C master will check ack from slave*/
 #define ACK_CHECK_DIS  0x0     /*!< I2C master will not check ack from slave */
@@ -99,13 +100,21 @@ void task_poll_sensor_telemetry(void * ptr)
     while(true)
     {
         // Read temperature
-        if( mcp9808_read_temp_c(&temperature) != ESP_OK) {
+        if( mcp9808_read_temp_c(&temperature) != ESP_OK)
+        {
             ESP_LOGE(TAG, "Failed to read temperature from sensor\n");
         }
-
-        // Send temperature on telemetry queue
-        else if (!xQueueSend(_config.telemetry_queue, &temperature, 500)) {
-            ESP_LOGE(TAG, "Failed to send temperature to queue within 500ms\n");
+        else
+        {
+            telemetry_message_handle_t message = telemetry_message_create_new();
+            telemetry_message_add_number(message, "temperature", (double)temperature);
+    
+            // Send temperature on telemetry queue
+            if (!xQueueSend(_config.telemetry_queue, &message, 500))
+            {
+                ESP_LOGE(TAG, "Failed to send temperaturmessagee to queue within 500ms\n");
+                telemetry_message_destroy(message);
+            }
         }
 
         // Wait for current sampling delay

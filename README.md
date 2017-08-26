@@ -13,7 +13,6 @@ It would be wise to run one of the sample to validate your setup.
 
 ## Step 2: Install Azure IoT C SDK
 
-
 Create an `azure-iot` directory in the ESP32 SDK's `components` directory:<br/>
 `mkdir $IDF_PATH/components/azure-iot`
 
@@ -21,7 +20,13 @@ Clone the Azure IoT C SDK into the `azure-iot` directory as `sdk`:<br/>
 `cd $IDF_PATH/components/azure-iot`<br/>
 `git clone --recursive  https://github.com/Azure/azure-iot-sdk-c.git sdk`
 
-__Note:__ At the time of writing, there is also a bug in the SDK's component makefile that prevent you from compiling the SDK. Open the file `sdk/c-utility/build_all/esp32/sdk/component.mk` into your favorite editor and make sure that `sdk/iothub_client/src/iothub_client_retry_control.o` is in the __COMPONENT_OBJS__ section. Refer to the [link](https://github.com/Azure/azure-c-shared-utility/issues/94) for more information.<br/>
+__Note:__ At the time of writing, there is a missing dependency in the SDK's component makefile that prevent you from compiling the SDK. Refer to the [link](https://github.com/Azure/azure-c-shared-utility/issues/94) for more information. Although it has been fixed it has not made it to release yet, so you have two options to fix the issue:
+- __Safe solution:__ Open the file `sdk/c-utility/build_all/esp32/sdk/component.mk` into your favorite editor and make sure that `sdk/iothub_client/src/iothub_client_retry_control.o` is in the __COMPONENT_OBJS__ section.
+- __Adventurous Solution:__ Update the submodule to the latest solution: <br/>
+`cd sdk/c-utility`<br/>
+`git checkout master`<br/>
+`cd ../..`<br/>
+Then fix any issues caused by this.
 
 Copy the `component.mk` file for ESP32 into the `azure-iot` directory:<br/>
 `cp sdk/c-utility/build_all/esp32/sdk/component.mk .`
@@ -42,3 +47,6 @@ Build the application and flash the device<br/>
 
 Monitor the serial port <br/>
 `make monitor`
+
+Or in a single step <br/>
+`make flash monitor`
