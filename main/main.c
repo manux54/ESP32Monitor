@@ -13,6 +13,7 @@
 
 #include "device-config.h"
 #include "mcp9808.h"
+#include "dht11.h"
 #include "iot-hub.h"
 #include "telemetry-data.h"
 
@@ -154,4 +155,5 @@ void app_main()
     // Initialize threads
     iothub_init(HUB_AZURE_HOST_NAME, HUB_AZURE_DEVICE_ID, HUB_AZURE_DEVICE_PRIMARY_KEY, telemetry_queue);
     mcp9808_init(I2C_PORT, MCP9808_SENSOR_ADDR, telemetry_queue);
+    dht11_init(18, telemetry_queue);
 }

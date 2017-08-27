@@ -217,40 +217,35 @@ void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, void* us
     /* Some device specific action code goes here... */
 
     IoTHubMessage_Destroy(eventInstance->messageHandle);
+    free(eventInstance);
 }
 
 esp_err_t dispatch_telemetry_data(telemetry_message_handle_t telemetry_message)
 {
-    static EVENT_INSTANCE message;
     static int messageCounter;
+
+    EVENT_INSTANCE * message = (EVENT_INSTANCE *) calloc(1, sizeof(EVENT_INSTANCE));
 
     char * json = telemetry_message_to_json(telemetry_message);
 
-    message.messageTrackingId = ++messageCounter;
-    message.messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)json, strlen(json));
+    message->messageTrackingId = ++messageCounter;
+    message->messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)json, strlen(json));
 
-    if (message.messageHandle == NULL)
+    if (message->messageHandle == NULL)
     {
         ESP_LOGE(TAG, "IoT Message creation failed\n");
         return ESP_FAIL;
     }
 
-    IoTHubMessage_SetMessageId(message.messageHandle, "MSG_ID");
-    IoTHubMessage_SetCorrelationId(message.messageHandle, "CORE_ID");
+    IoTHubMessage_SetMessageId(message->messageHandle, "MSG_ID");
+    IoTHubMessage_SetCorrelationId(message->messageHandle, "CORE_ID");
 
-    /*
-    MAP_HANDLE propMap = IoTHubMessage_Properties(message.messageHandle);
-    if (Map_AddOrUpdate(propMap, "temperatureAlert", temperature > 28 ? "true" : "false") != MAP_OK)
-    {
-        ESP_LOGE(TAG, "Failed to create temperature alert property");
-    }
-*/
-    ESP_LOGI(TAG, "Sending Message: %s", json);
+     ESP_LOGI(TAG, "Sending Message: %s", json);
 
     telemetry_message_dispose_json(json);
     telemetry_message_destroy(telemetry_message);
 
-    if (IoTHubClient_LL_SendEventAsync(_iotHubClientHandle, message.messageHandle, SendConfirmationCallback, &message) != IOTHUB_CLIENT_OK)
+    if (IoTHubClient_LL_SendEventAsync(_iotHubClientHandle, message->messageHandle, SendConfirmationCallback, message) != IOTHUB_CLIENT_OK)
     {
         ESP_LOGE(TAG, "IoTHubClient_LL_SendEventAsync Failed\n");
         return ESP_FAIL;
