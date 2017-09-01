@@ -16,7 +16,6 @@
 telemetry_message_handle_t telemetry_message_create_new()
 {
     telemetry_message_handle_t handle = (telemetry_message_handle_t) json_value_init_object();
-    telemetry_message_add_string(handle, "deviceId", HUB_AZURE_DEVICE_ID);
     return handle;
 }
 

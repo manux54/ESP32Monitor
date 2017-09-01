@@ -11,11 +11,16 @@
 
 #include "nvs_flash.h"
 
+#include "driver/i2c.h"
+
 #include "device-config.h"
-#include "mcp9808.h"
-#include "dht11.h"
 #include "iot-hub.h"
 #include "telemetry-data.h"
+
+#include "device.h"
+#include "sensor.h"
+#include "dht.h"
+#include "mcp9808.h"
 
 /* Logging Tag */
 static const char *TAG = "main-hub";
@@ -154,6 +159,22 @@ void app_main()
 
     // Initialize threads
     iothub_init(HUB_AZURE_HOST_NAME, HUB_AZURE_DEVICE_ID, HUB_AZURE_DEVICE_PRIMARY_KEY, telemetry_queue);
-    mcp9808_init(I2C_PORT, MCP9808_SENSOR_ADDR, telemetry_queue);
-    dht11_init(18, telemetry_queue);
+
+    DHT_SENSOR_OPTIONS dht_options = 
+    {
+        .type = DHT_11,
+        .pin = 18
+    };
+
+    MCP9808_SENSOR_OPTIONS mcp9808_options = 
+    {
+        .i2c_port = I2C_PORT,
+        .i2c_address = MCP9808_SENSOR_ADDR
+    };
+
+    DEVICE_HANDLE device = device_create(HUB_AZURE_DEVICE_ID, telemetry_queue);
+    device_add_sensor(device, dht_get_inteface(), &dht_options);
+    device_add_sensor(device, mcp9808_get_inteface(), &mcp9808_options);
+
+    device_start(device);
 }
