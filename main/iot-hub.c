@@ -60,24 +60,49 @@ void ReportedStateCallback(int status_code, void * userContextCallback)
     ESP_LOGI(TAG, "Reported State Callback with status code %d", status_code)
 }
 
-esp_err_t iothub_reportTwinData(int refreshRate)
+esp_err_t iothub_reportTwinData()
 {
-    char data[100];
-    sprintf(data, "{\"refreshRate\":\"%u\"}", refreshRate);
+    telemetry_message_handle_t handle = telemetry_message_create_new();
+    telemetry_message_add_number( handle, "samplingRate", _device_configuration.sensor_sampling_rate);
+    telemetry_message_add_number( handle, "hubPoolingRate", _device_configuration.hub_pooling_rate);
+    
+    char * data = telemetry_message_to_json(handle);
 
-    if(IoTHubClient_LL_SendReportedState(_iotHubClientHandle, (unsigned char *) data, strlen(data), ReportedStateCallback, NULL) != IOTHUB_CLIENT_OK)
-    {
-        return ESP_FAIL;
-    }
+    int status = IoTHubClient_LL_SendReportedState(_iotHubClientHandle, (unsigned char *) data, strlen(data), ReportedStateCallback, NULL);
 
-    return ESP_OK;
+    telemetry_message_dispose_json(data);
+    telemetry_message_destroy(handle);
+
+    return (status == IOTHUB_CLIENT_OK) ? ESP_OK : ESP_FAIL;
 }
 
 void DeviceTwinUpdateStateCallback(DEVICE_TWIN_UPDATE_STATE update_state, const unsigned char* payLoad, size_t size, void* userContextCallback)
 {
-    char * buf = malloc(size + 1);
-    memcpy(buf, payLoad, size);
-    buf[size] = 0;
+    cJSON * root = cJSON_Parse( (const char *)payLoad);
+    cJSON * desired = (update_state == DEVICE_TWIN_UPDATE_COMPLETE) ? cJSON_GetObjectItem(root, "desired") : root;
+
+    if (desired != NULL)
+    {
+        cJSON * samplingRateItem = cJSON_GetObjectItem(desired, "samplingRate");
+
+        if (samplingRateItem != NULL && samplingRateItem->valueint > 1000)
+        {
+            ESP_LOGI(TAG, "Sampling rate updated: %d", samplingRateItem->valueint);
+            _device_configuration.sensor_sampling_rate = samplingRateItem->valueint;
+        }
+
+        cJSON * poolingRateItem = cJSON_GetObjectItem(desired, "hubPoolingRate");
+
+        if (poolingRateItem != NULL && poolingRateItem->valueint > 0)
+        {
+            ESP_LOGI(TAG, "Pooling rate updated: %d", poolingRateItem->valueint);
+            _device_configuration.hub_pooling_rate = poolingRateItem->valueint;
+        }
+    }
+    
+    cJSON_Delete(root);
+    
+    iothub_reportTwinData();
     
     if (update_state == DEVICE_TWIN_UPDATE_COMPLETE)
     {
@@ -88,6 +113,10 @@ void DeviceTwinUpdateStateCallback(DEVICE_TWIN_UPDATE_STATE update_state, const 
         ESP_LOGI(TAG, "Partial Update request received\n");
     }
 
+    char * buf = malloc(size + 1);
+    memcpy(buf, payLoad, size);
+    buf[size] = 0;
+    
     ESP_LOGI(TAG, "Payload: %s\n", buf);
 
     free(buf);

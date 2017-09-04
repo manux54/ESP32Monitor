@@ -21,6 +21,7 @@
 #include "sensor.h"
 #include "dht.h"
 #include "mcp9808.h"
+#include "ldr.h"
 
 /* Logging Tag */
 static const char *TAG = "main-hub";
@@ -61,7 +62,8 @@ esp_err_t initialize_wifi()
     // Initialize an event callback function to process wifi lifecycle events
     esp_err_t status = esp_event_loop_init(event_handler, NULL);
 
-    if (status != ESP_OK) {
+    if (status != ESP_OK) 
+    {
         ESP_LOGE(TAG, "Error initializing wifi event loop");
         return status;
     }
@@ -70,7 +72,8 @@ esp_err_t initialize_wifi()
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
 
     status = esp_wifi_init(&cfg);
-    if (status != ESP_OK) {
+    if (status != ESP_OK) 
+    {
         ESP_LOGE(TAG, "Error initializing wifi driver");
         return status;
     }
@@ -80,13 +83,16 @@ esp_err_t initialize_wifi()
     // TODO: esp_wifi_get_config...
     status = esp_wifi_set_storage(WIFI_STORAGE_RAM);
 
-    if (status != ESP_OK) {
+    if (status != ESP_OK)
+    {
         ESP_LOGE(TAG, "Error initializing wifi storage");
         return status;
     }
 
-    wifi_config_t wifi_config = {
-        .sta = {
+    wifi_config_t wifi_config =
+    {
+        .sta =
+        {
             .ssid = HUB_WIFI_SSID,
             .password = HUB_WIFI_PASS,
         },
@@ -96,21 +102,24 @@ esp_err_t initialize_wifi()
 
     status = esp_wifi_set_mode(WIFI_MODE_STA);
 
-    if (status != ESP_OK) {
+    if (status != ESP_OK)
+    {
         ESP_LOGE(TAG, "Error settig wifi mode to station");
         return status;
     }
 
     status = esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config);
 
-    if (status != ESP_OK) {
+    if (status != ESP_OK)
+    {
         ESP_LOGE(TAG, "Error configuring wifi");
         return status;
     }
 
     status = esp_wifi_start();
 
-    if (status != ESP_OK) {
+    if (status != ESP_OK) 
+    {
         ESP_LOGE(TAG, "Error starting wifi");
         return status;
     }
@@ -118,9 +127,11 @@ esp_err_t initialize_wifi()
     return status;
 }
 
-esp_err_t initialize_i2c() {
+esp_err_t initialize_i2c() 
+{
 
-    i2c_config_t config = {
+    i2c_config_t config = 
+    {
         .mode = I2C_MODE_MASTER,
         
         .sda_io_num = I2C_SDA_IO,
@@ -172,9 +183,15 @@ void app_main()
         .i2c_address = MCP9808_SENSOR_ADDR
     };
 
+    LDR_SENSOR_OPTIONS ldr_options = 
+    {
+        .pin = 32
+    };
+
     DEVICE_HANDLE device = device_create(HUB_AZURE_DEVICE_ID, telemetry_queue);
     device_add_sensor(device, dht_get_inteface(), &dht_options);
     device_add_sensor(device, mcp9808_get_inteface(), &mcp9808_options);
-
+    device_add_sensor(device, ldr_get_inteface(), &ldr_options);
+    
     device_start(device);
 }
